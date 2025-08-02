@@ -20,6 +20,7 @@ struct Args {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 enum Algorithm {
     Huffman,
+    Auto,
     // Add LXW, LZ77, etc. later on
 }
 
@@ -30,7 +31,7 @@ fn main() {
     let output_path = args.o;
 
     match args.a {
-        Algorithm::Huffman => {
+        Algorithm::Huffman | Algorithm::Auto => {
             println!("Using Huffman Compression");
             comp::huffman::compress_file(&input_path, &output_path);
         }
