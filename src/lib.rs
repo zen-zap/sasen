@@ -1,10 +1,12 @@
+use serde::{Serialize, Deserialize};
+
 pub mod compression;
 
 /// Denotes a Leaf byte
 pub type Leaf = u8;
 
 /// Denotes a Node, can be a Leaf or can have (left, right) children which are both of type `Node`
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Node {
     /// hold the frequency count for the current Node
     pub cnt: usize,
@@ -35,4 +37,11 @@ impl PartialOrd for Node {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other)) // delegating to Ord
     }
+}
+
+/// This is serialized into the final output file
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CompressedFile {
+    pub tree: Node,
+    pub data: Vec<u8>,
 }

@@ -34,6 +34,8 @@ fn main() {
         Algorithm::Huffman | Algorithm::Auto => {
             println!("Using Huffman Compression");
             comp::huffman::compress_file(&input_path, &output_path);
+            println!("\n\nFILE COMPRESSION DONE\n\nSTARTING DECOMPRESSION\n\n\n");
+            comp::huffman::decompress_file(&output_path, &String::from("decompressed.hf"));
         }
     }
 }

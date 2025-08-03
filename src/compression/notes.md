@@ -12,7 +12,14 @@ so let's convert them into (byte, cnt) and add them into a min-heap
 We have to use Box<> to avoid the recursive size error... since rust determines the space to allocate at compile time
 This way it'll only allow space for a reference, and we can use Node within Node
 
-### Designing the BinaryHeap
+### Designing the Huffman Tree
+
+The Huffman Tree will be held within a min-heap itself.
+Each nodes `Node` of the huffman tree will be pushed into the heap 
+and combined as we go.
+
+The final Huffman Tree would be within a root `Node` that we would get from the heap.
+
 Rust has the BinaryHeap as a max-heap by default
 
 How do you do that ? .. you use traits
@@ -26,3 +33,8 @@ pub trait Ord: PartialOrd<Self> {
 
 - cmp() tells how things are compared
 - Ordering is an enum: Less, Equal, Greater
+
+### Serialization
+
+For generating the final compressed output file, we would need to have the compressed bitstream and the huffman tree
+stored in the file. We'll use bincode for this.

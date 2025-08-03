@@ -1,5 +1,5 @@
 #![allow(unused)]
-use crate::Node;
+use crate::{Node, CompressedFile};
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -20,7 +20,7 @@ pub fn compress_file(input_file_path: &String, output_file_path: &String) {
     //     print!("{} ", byte);
     // }
 
-    println!("=====Moving on to Frequency Counting=====");
+    println!("\n=====Moving on to Frequency Counting=====\n");
     // A byte is 8 bits, so 256 different values
     let mut counts = [0u32; 256];
     for byte in &buffer {
@@ -39,7 +39,7 @@ pub fn compress_file(input_file_path: &String, output_file_path: &String) {
         }
     }
 
-    println!("=====Making the Huffman Tree=====");
+    println!("\n=====Making the Huffman Tree=====\n");
 
     let mut heap = BinaryHeap::new();
 
@@ -107,9 +107,7 @@ pub fn compress_file(input_file_path: &String, output_file_path: &String) {
     println!("Total bits in compressed stream: {}", bitstream.len());
     println!("Approx size in bytes: {:.2}", bitstream.len() as f64 / 8.0);
 
-    // Currently it is a Vec of [true, false, ...]
-    // we should group these into packs of 8 to form a byte
-    
+    // byte-packing 
     let mut packed_bytes: Vec<u8> = Vec::new();
     let mut curr_byte = 0u8;
     let mut bit_cnt = 0;
@@ -137,11 +135,23 @@ pub fn compress_file(input_file_path: &String, output_file_path: &String) {
     }
 
     let mut output = File::create(Path::new("../../compressed.icf")).expect("Failed to create intermediate compressed file representation");
-    // write just the compressed output to an intermediate compressed output file
+    // write just the compressed output to an intermediate compressed output file just to test
     output.write_all(&packed_bytes).expect("Failed to write compressed data");
 
     println!("Compressed size (in bytes): {}", packed_bytes.len());
     println!("Compression ratio: {:.2}%", (packed_bytes.len() as f64 / buffer.len() as f64) * 100.0);
+
+    println!("\n=====STARTING SERIALIZATION=====\n");
+
+    let compressed = CompressedFile {
+        tree: root,
+        data: packed_bytes,
+    };
+
+    let mut output = File::create(&output_file_path).expect("Failed to create output file");
+    bincode::serialize_into(&mut output, &compressed).expect("Failed to serialize content");
+    
+    println!("FINAL OUTPUT SIZE: {}", get_file_size(Path::new(output_file_path)));
 }
 
 /// Walks the huffman tree and returns a lookup table `HashMap<u8, Vec<bool>>` containing the
@@ -175,7 +185,48 @@ fn walk_huffman_tree(
 }
 
 pub fn decompress_file(input_file_path: &String, output_file_path: &String) {
-    unimplemented!("DeCompression algorithm is not yet complete!")
+
+    println!("\n=====STARTING DECOMPRESSION=====\n");
+
+    let mut file = File::open(Path::new(input_file_path)).expect("Failed to open file for decompression");
+    let compressed_file: CompressedFile = bincode::deserialize_from(&mut file).expect("Failed to deserialize the input file");
+
+    let root = compressed_file.tree;
+    let compressed_bytes = compressed_file.data;
+
+    println!("Compressed file loaded from given path. Byte Count: {}", compressed_bytes.len());
+
+    // bit-unpacking
+    let mut bitstream: Vec<bool> = Vec::new();
+
+    for byte in compressed_bytes {
+        for i in (0..8).rev() { // MSB then LSB -- this is unclear
+            let bit = (byte >> i) & 1;
+            bitstream.push(bit == 1);
+        }
+    }
+
+    // bitstream decode
+    let mut output_stream = Vec::new();
+    let mut current = &root;
+    for bit in bitstream {
+        if let Some(children) = &current.children {
+            current = if bit {
+                &children.1
+            } else {
+                &children.0
+            };
+        }
+
+        if let Some(byte) = current.leaf {
+            output_stream.push(byte);
+            current = &root; // restart from top once you reach a leaf
+        }
+    }
+
+
+    let mut output = File::create(Path::new(output_file_path)).expect("Failed to create decompressed file");
+    output.write_all(&output_stream).expect("Failed to write decompressed data");
 }
 
 fn get_file_size(file_path: &Path) -> u64 {
