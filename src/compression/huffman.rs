@@ -4,10 +4,13 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::collections::{BinaryHeap, HashMap};
+use std::sync::LazyLock;
 
 pub fn compress_file(input_file_path: &String, output_file_path: &String) {
 
     let in_path = PathBuf::from(input_file_path);
+    let file_size = get_file_size(Path::new(input_file_path));
+    println!("File Size Before Compression: {}", file_size);
     let mut file = File::open(in_path).expect("Unable to open the file");
     let mut buffer = Vec::new();
     let bytes_read = file.read_to_end(&mut buffer).expect("Failed to read file");
@@ -24,17 +27,17 @@ pub fn compress_file(input_file_path: &String, output_file_path: &String) {
         counts[*byte as usize] += 1;
     }
 
-
-    // for (byte, &count) in counts.iter().enumerate() {
-    //     if count > 0 {
-    //         // If it's a printable ASCII character (like a-z, /, etc)
-    //         if byte == (b' ' as usize)  || char::from(byte as u8).is_ascii_graphic() {
-    //             println!("Byte: {:>3} ('{}') → Count: {}", byte, byte as u8 as char, count);
-    //         } else {
-    //             println!("Byte: {:>3}      → Count: {}", byte, count);
-    //         }
-    //     }
-    // }
+    println!("Non Zero Frequency Counts...");
+    for (byte, &count) in counts.iter().enumerate() {
+        if count > 0 {
+            // If it's a printable ASCII character (like a-z, /, etc)
+            if byte == (b' ' as usize)  || char::from(byte as u8).is_ascii_graphic() {
+                println!("Byte: {:>3} ('{}') → Count: {}", byte, byte as u8 as char, count);
+            } else {
+                println!("Byte: {:>3}      → Count: {}", byte, count);
+            }
+        }
+    }
 
     println!("=====Making the Huffman Tree=====");
 
@@ -78,19 +81,104 @@ pub fn compress_file(input_file_path: &String, output_file_path: &String) {
 
     println!("Walking the Tree Now~");
     // get the lookup table for the encoder
-    let encoding = walk_huffman_tree(&root);
+    let mut lookup_table: HashMap<u8, Vec<bool>> = HashMap::new();
+    let mut level_encode: Vec<bool> = Vec::new();
+    // This one updates our HashMap in-place
+    walk_huffman_tree(&root, &mut level_encode, &mut lookup_table);
+
+
+    for (byte, code) in &lookup_table {
+        let repr: String = code.iter().map(|&b| if b { '1' } else { '0' }).collect();
+        println!("Byte: {:?} → {}", *byte as char, repr);
+    }
+
+    println!("Moving on to bitstream generation");
+    // we take our original file content and swap it with a bitstream from the lookup_table
+    let mut bitstream: Vec<bool> = Vec::new();
+
+    for byte in &buffer {
+        if let Some(code) = lookup_table.get(byte) {
+            bitstream.extend(code); // code is a Vec<bool> so we gotta se extend
+        } else {
+            panic!("Byte {} not found in huffman tree", byte);
+        }
+    }
+
+    println!("Total bits in compressed stream: {}", bitstream.len());
+    println!("Approx size in bytes: {:.2}", bitstream.len() as f64 / 8.0);
+
+    // Currently it is a Vec of [true, false, ...]
+    // we should group these into packs of 8 to form a byte
+    
+    let mut packed_bytes: Vec<u8> = Vec::new();
+    let mut curr_byte = 0u8;
+    let mut bit_cnt = 0;
+
+    for &bit in &bitstream {
+
+        curr_byte <<= 1; // shifting the current bits to left
+        if bit {
+            // If bit is true, set the lowest bit to 1
+            curr_byte |= 1;
+        }
+        bit_cnt += 1;
+
+        if bit_cnt == 8 {
+            packed_bytes.push(curr_byte);
+            curr_byte = 0;
+            bit_cnt = 0;
+        }
+    }
+
+    // leftover bits
+    if bit_cnt > 0 {
+        curr_byte <<= (8-bit_cnt);
+        packed_bytes.push(curr_byte);
+    }
+
+    let mut output = File::create(Path::new("../../compressed.icf")).expect("Failed to create intermediate compressed file representation");
+    // write just the compressed output to an intermediate compressed output file
+    output.write_all(&packed_bytes).expect("Failed to write compressed data");
+
+    println!("Compressed size (in bytes): {}", packed_bytes.len());
+    println!("Compression ratio: {:.2}%", (packed_bytes.len() as f64 / buffer.len() as f64) * 100.0);
 }
 
-
-// Hashmap<u8, Vec<bool>> is the lookup table for the encoder
+/// Walks the huffman tree and returns a lookup table `HashMap<u8, Vec<bool>>` containing the
+/// encoding at each level of the tree.
 fn walk_huffman_tree(
     node: &Node,
     path: &mut Vec<bool>,
     map: &mut HashMap<u8, Vec<bool>>
 ) {
+    // NOTE: make sure to work with references and not violate ownership rules anywhere
+    if let Some(val) = node.leaf {
+        // reached a leaf node .. push the encoding into the map
+        map.insert(val, path.clone());
+    } else {
+        if let Some(children) = &node.children {
+            let left_child = &children.0;
+            let right_child = &children.1;
+
+            // the path is passed a reference
+            // deal with the left child first
+            path.push(false);
+            walk_huffman_tree(&left_child, path, map);
+            path.pop();
+            // deal with the right child
+            path.push(true);
+            walk_huffman_tree(&right_child, path, map);
+            path.pop();
+        }
+    }
 
 }
 
 pub fn decompress_file(input_file_path: &String, output_file_path: &String) {
     unimplemented!("DeCompression algorithm is not yet complete!")
+}
+
+fn get_file_size(file_path: &Path) -> u64 {
+    let metadata = std::fs::metadata(file_path);
+    return metadata.expect("Failed to fetch file size").len();
 }
